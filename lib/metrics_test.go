@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	axiom "github.com/axiomhq/quantiles"
 	bmizerany "github.com/bmizerany/perks/quantile"
 	gk "github.com/dgryski/go-gk"
 	streadway "github.com/streadway/quantile"
@@ -123,6 +124,7 @@ func BenchmarkMetrics(b *testing.B) {
 		)},
 		{"dgrisky/go-gk", newDgriskyEstimator(0.5)},
 		{"influxdata/tdigest", newTdigestEstimator(100)},
+		{"axiom/quantiles", newAxiomEstimator(0.5)},
 	} {
 		m := Metrics{Latencies: LatencyMetrics{estimator: tc.estimator}}
 		b.Run("Add/"+tc.name, func(b *testing.B) {
@@ -171,4 +173,21 @@ func newDgriskyEstimator(epsilon float64) *dgryskiEstimator {
 func (e *dgryskiEstimator) Add(s float64) { e.Insert(s) }
 func (e *dgryskiEstimator) Get(q float64) float64 {
 	return e.Query(q)
+}
+
+type axiomEstimator struct {
+	*axiom.Sketch
+}
+
+func newAxiomEstimator(epsilon float64) *axiomEstimator {
+	sketch, _ := axiom.New(epsilon, 1000)
+	return &axiomEstimator{Sketch: sketch}
+}
+
+func (e *axiomEstimator) Add(s float64) { e.Push(s, 1.0) }
+func (e *axiomEstimator) Get(q float64) float64 {
+	// ignore finalized error if its called once then all good
+	e.Finalize()
+	val, _ := e.Quantile(q)
+	return val
 }
